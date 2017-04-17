@@ -19,6 +19,7 @@ executions.
 """
 
 import os
+import logging
 
 from perfkitbenchmarker import dpb_service
 from perfkitbenchmarker import errors
@@ -40,12 +41,17 @@ flags.DEFINE_string('git_binary', 'git', 'Path to git binary.')
 flags.DEFINE_string('beam_version', None, 'Version of Beam to download. Use'
                                           ' tag from Github as value. If not'
                                           ' specified, will use HEAD.')
+flags.DEFINE_string('beam_sdk', 'java', 'Which BEAM SDK is used to build the'
+                                        'benchmark pipeline')
 
 FLAGS = flags.FLAGS
 
 SUPPORTED_RUNNERS = [
     dpb_service.DATAFLOW,
 ]
+
+BEAM_JAVA_SDK = 'java'
+BEAM_PYTHON_SDK = 'python'
 
 BEAM_REPO_LOCATION = 'https://github.com/apache/beam.git'
 INSTALL_COMMAND_ARGS = ["clean", "install", "-DskipTests",
@@ -88,11 +94,12 @@ def InitializeBeamRepo(benchmark_spec):
     mvn_command = [FLAGS.maven_binary]
     mvn_command.extend(INSTALL_COMMAND_ARGS)
     mvn_command.append('-Pdataflow-runner')
-    vm_util.IssueCommand(mvn_command, cwd=beam_dir)
+    logging.info("Running: %s", mvn_command)
+    # vm_util.IssueCommand(mvn_command, cwd=beam_dir)
 
 
-def BuildMavenCommand(benchmark_spec, classname, job_arguments):
-  """ Constructs a maven command for the benchmark.
+def BuildExecutionCommand(benchmark_spec, classname, job_arguments):
+  """ Constructs a Beam execution command for the benchmark.
 
   Args:
     benchmark_spec: The PKB spec for the benchmark to run.
@@ -106,6 +113,29 @@ def BuildMavenCommand(benchmark_spec, classname, job_arguments):
   if benchmark_spec.service_type not in SUPPORTED_RUNNERS:
     raise NotImplementedError('Unsupported Runner')
 
+  if FLAGS.beam_sdk == BEAM_JAVA_SDK:
+    cmd = BuildMavenCommand(benchmark_spec, classname, job_arguments)
+  elif FLAGS.beam_sdk == BEAM_PYTHON_SDK:
+    cmd = BuildPythonCommand(benchmark_spec, classname, job_arguments)
+  else:
+    raise NotImplementedError('Unsupported Beam SDK')
+
+  # TODO: This is temporary, find a better way.
+  beam_dir = FLAGS.beam_location if FLAGS.beam_location else os.path.join(
+    vm_util.GetTempDir(), 'beam')
+  return cmd, beam_dir
+
+def BuildMavenCommand(benchmark_spec, classname, job_arguments):
+  """ Constructs a maven command for the benchmark.
+
+  Args:
+    benchmark_spec: The PKB spec for the benchmark to run.
+    classname: The classname of the class to run.
+    job_arguments: The additional job arguments provided for the run.
+
+  Returns:
+    cmd: Array containing the built command.
+  """
   cmd = []
   maven_executable = FLAGS.maven_binary
 
@@ -137,7 +167,34 @@ def BuildMavenCommand(benchmark_spec, classname, job_arguments):
   cmd.append("-DintegrationTestPipelineOptions="
              "[{}]".format(','.join(beam_args)))
 
-  # TODO: This is temporary, find a better way.
-  beam_dir = FLAGS.beam_location if FLAGS.beam_location else os.path.join(
-      vm_util.GetTempDir(), 'beam')
-  return cmd, beam_dir
+  return cmd
+
+
+def BuildPythonCommand(benchmark_spec, modulename, job_arguments):
+  """ Constructs a Python command for the benchmark.
+
+  Args:
+    benchmark_spec: The PKB spec for the benchmark to run.
+    modulename: The full name of the module to run.
+    job_arguments: The additional job arguments provided for the run.
+
+  Returns:
+    cmd: Array containg the built command.
+  """
+  job_arguments = ['--runner=TestDataflowRunner',
+                   '--project=google.com:clouddfe',
+                   '--job_name=py-wordcount-e2e-markliu ',
+                   '--staging_location=gs://mliu-test/tmp/python ',
+                   '--temp_location=gs://mliu-test/tmp/python',
+                   '--sdk_location=dist/apache-beam-0.7.0.dev0.tar.gz',
+                   '--output=gs://mliu-test/tmp/python/output']
+
+  cmd = []
+  cmd.append('python')
+  cmd.append('setup.py nosetests -s')
+  cmd.append('--tests='
+             '{}'.format('apache_beam.examples.wordcount_it_test'))
+  cmd.append('--test-pipeline-options='
+             '"{}"'.format(' '.join(job_arguments)))
+
+  return cmd
