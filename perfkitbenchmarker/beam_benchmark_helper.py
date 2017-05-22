@@ -30,10 +30,13 @@ from perfkitbenchmarker import vm_util
 # TODO: Find a better place for the maven_binary flag.
 flags.DEFINE_string('maven_binary', 'mvn',
                     'Set to use a different mvn binary than is on the PATH.')
+flags.DEFINE_string('python_binary', 'python',
+                    'Set to use a different python binary that is on the PATH.')
 flags.DEFINE_string('beam_location', None,
                     'Location of already checked out Beam codebase.')
 flags.DEFINE_string('beam_it_module', None,
-                    'Module containing integration test.')
+                    'Module containing integration test. For Python SDK, use '
+                    'comma-separated list to include multiple modules.')
 flags.DEFINE_string('beam_it_profile', None,
                     'Profile to activate integration test.')
 flags.DEFINE_integer('beam_it_timeout', 600, 'Integration Test Timeout.')
@@ -42,7 +45,10 @@ flags.DEFINE_string('beam_version', None, 'Version of Beam to download. Use'
                                           ' tag from Github as value. If not'
                                           ' specified, will use HEAD.')
 flags.DEFINE_string('beam_sdk', 'java', 'Which BEAM SDK is used to build the'
-                                        'benchmark pipeline')
+                                        'benchmark pipeline.')
+flags.DEFINE_string('beam_attr', None,
+                    'Attributes of integration test that are used in Python '
+                    'SDK.')
 
 FLAGS = flags.FLAGS
 
@@ -56,7 +62,7 @@ BEAM_PYTHON_SDK = 'python'
 BEAM_REPO_LOCATION = 'https://github.com/apache/beam.git'
 INSTALL_COMMAND_ARGS = ["clean", "install", "-DskipTests",
                         "-Dcheckstyle.skip=true"]
-
+DEFAULT_PYTHON_IT_MODULE = 'apache_beam.examples.wordcount_it_test'
 
 def InitializeBeamRepo(benchmark_spec):
   """Ensures environment is prepared for running Beam benchmarks.
@@ -98,7 +104,7 @@ def InitializeBeamRepo(benchmark_spec):
     # vm_util.IssueCommand(mvn_command, cwd=beam_dir)
 
 
-def BuildExecutionCommand(benchmark_spec, classname, job_arguments):
+def BuildBeamCommand(benchmark_spec, classname, job_arguments):
   """ Constructs a Beam execution command for the benchmark.
 
   Args:
@@ -114,9 +120,9 @@ def BuildExecutionCommand(benchmark_spec, classname, job_arguments):
     raise NotImplementedError('Unsupported Runner')
 
   if FLAGS.beam_sdk == BEAM_JAVA_SDK:
-    cmd = BuildMavenCommand(benchmark_spec, classname, job_arguments)
+    cmd = _BuildMavenCommand(benchmark_spec, classname, job_arguments)
   elif FLAGS.beam_sdk == BEAM_PYTHON_SDK:
-    cmd = BuildPythonCommand(benchmark_spec, classname, job_arguments)
+    cmd = _BuildPythonCommand(benchmark_spec, job_arguments)
   else:
     raise NotImplementedError('Unsupported Beam SDK')
 
@@ -125,7 +131,7 @@ def BuildExecutionCommand(benchmark_spec, classname, job_arguments):
     vm_util.GetTempDir(), 'beam')
   return cmd, beam_dir
 
-def BuildMavenCommand(benchmark_spec, classname, job_arguments):
+def _BuildMavenCommand(benchmark_spec, classname, job_arguments):
   """ Constructs a maven command for the benchmark.
 
   Args:
@@ -170,31 +176,49 @@ def BuildMavenCommand(benchmark_spec, classname, job_arguments):
   return cmd
 
 
-def BuildPythonCommand(benchmark_spec, modulename, job_arguments):
+def _BuildPythonCommand(benchmark_spec, job_arguments):
   """ Constructs a Python command for the benchmark.
 
   Args:
     benchmark_spec: The PKB spec for the benchmark to run.
-    modulename: The full name of the module to run.
     job_arguments: The additional job arguments provided for the run.
 
   Returns:
     cmd: Array containg the built command.
   """
-  job_arguments = ['--runner=TestDataflowRunner',
-                   '--project=google.com:clouddfe',
-                   '--job_name=py-wordcount-e2e-markliu ',
-                   '--staging_location=gs://mliu-test/tmp/python ',
-                   '--temp_location=gs://mliu-test/tmp/python',
-                   '--sdk_location=dist/apache-beam-0.7.0.dev0.tar.gz',
-                   '--output=gs://mliu-test/tmp/python/output']
+  # job_arguments = [
+  #                  '--project=google.com:clouddfe',
+  #                  '--job_name=py-wordcount-e2e-markliu ',
+  #                  '--staging_location=gs://mliu-test/tmp/python ',
+  #                  '--temp_location=gs://mliu-test/tmp/python',
+  #                  '--sdk_location=dist/apache-beam-2.1.0.dev0.tar.gz',
+  #                  '--output=gs://mliu-test/tmp/python/output']
 
   cmd = []
-  cmd.append('python')
-  cmd.append('setup.py nosetests -s')
-  cmd.append('--tests='
-             '{}'.format('apache_beam.examples.wordcount_it_test'))
+
+  python_executable = FLAGS.python_binary
+  if not vm_util.ExecutableOnPath(python_executable):
+    raise errors.Setup.MissingExecutableError(
+      'Could not find required executable "%s"' % python_executable)
+  cmd.append(python_executable)
+
+  cmd.append('setup.py')
+  cmd.append('nosetests')
+
+  if FLAGS.beam_it_module:
+    cmd.append('--tests={}'.format(FLAGS.beam_it_module))
+  if FLAGS.beam_attr:
+    cmd.append('--attr={}'.format(FLAGS.beam_attr))
+  if not FLAGS.beam_it_module and not FLAGS.beam_attr:
+    # Set default IT if no module and attribute is specified.
+    cmd.append('--tests={}'.format(DEFAULT_PYTHON_IT_MODULE))
+
+  beam_args = job_arguments if job_arguments else []
+
+  if benchmark_spec.service_type == dpb_service.DATAFLOW:
+    beam_args.append('--runner=TestDataflowRunner')
+
   cmd.append('--test-pipeline-options='
-             '"{}"'.format(' '.join(job_arguments)))
+             '{}'.format(' '.join(beam_args)))
 
   return cmd
