@@ -18,6 +18,7 @@ This file contains methods which are common to all Beam benchmarks and
 executions.
 """
 
+import fnmatch
 import os
 import logging
 
@@ -126,10 +127,7 @@ def BuildBeamCommand(benchmark_spec, classname, job_arguments):
   else:
     raise NotImplementedError('Unsupported Beam SDK')
 
-  # TODO: This is temporary, find a better way.
-  beam_dir = FLAGS.beam_location if FLAGS.beam_location else os.path.join(
-    vm_util.GetTempDir(), 'beam')
-  return cmd, beam_dir
+  return cmd, _GetBeamDir()
 
 def _BuildMavenCommand(benchmark_spec, classname, job_arguments):
   """ Constructs a maven command for the benchmark.
@@ -216,9 +214,34 @@ def _BuildPythonCommand(benchmark_spec, job_arguments):
   beam_args = job_arguments if job_arguments else []
 
   if benchmark_spec.service_type == dpb_service.DATAFLOW:
+    python_binary = _FindFiles(os.path.join(_GetBeamDir(),
+                                            'sdks/python/target'),
+                               'apache-beam*.tar.gz')
+    if len(python_binary) == 0:
+      raise RuntimeError('No python binary is found')
+
     beam_args.append('--runner=TestDataflowRunner')
+    beam_args.append('--sdk_location={}'.format(python_binary[0]))
 
   cmd.append('--test-pipeline-options='
              '{}'.format(' '.join(beam_args)))
 
   return cmd
+
+
+def _GetBeamDir():
+  # TODO: This is temporary, find a better way.
+  return FLAGS.beam_location if FLAGS.beam_location else os.path.join(
+    vm_util.GetTempDir(), 'beam')
+
+
+def _FindFiles(base_path, pattern):
+  if os.path.exists(base_path):
+    raise RuntimeError('No such directory: %s' % base_path)
+
+  results = []
+  for root, dirname, files in os.walk(base_path):
+    for file in files:
+      if fnmatch.fnmatch(file, pattern):
+        results.append(os.path.join(root, file))
+  return results
