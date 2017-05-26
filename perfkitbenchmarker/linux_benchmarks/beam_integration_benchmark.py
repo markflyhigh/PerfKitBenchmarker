@@ -78,6 +78,11 @@ def CheckPrerequisites(benchmark_spec):
     raise errors.Config.InvalidValue(
         'No args provided. To run with default class (WordCountIT), must'
         'provide --beam_it_args=--tempRoot=<temp dir, e.g. gs://my-dir/temp>.')
+  if FLAGS.beam_sdk is None:
+    raise errors.Config.InvalidValue(
+        'No sdk provided. To run Beam integration benchmark, must provide'
+        'which sdk is used in the pipeline. For example, java/python.'
+    )
   if benchmark_spec.dpb_service.service_type != dpb_service.DATAFLOW:
     raise NotImplementedError('Currently only works against Dataflow.')
 

@@ -45,8 +45,8 @@ flags.DEFINE_string('git_binary', 'git', 'Path to git binary.')
 flags.DEFINE_string('beam_version', None, 'Version of Beam to download. Use'
                                           ' tag from Github as value. If not'
                                           ' specified, will use HEAD.')
-flags.DEFINE_string('beam_sdk', 'java', 'Which BEAM SDK is used to build the'
-                                        'benchmark pipeline.')
+flags.DEFINE_string('beam_sdk', None, 'Which BEAM SDK is used to build the'
+                                      'benchmark pipeline.')
 flags.DEFINE_string('beam_attr', None,
                     'Attributes of integration test that are used in Python '
                     'SDK.')
@@ -89,20 +89,17 @@ def InitializeBeamRepo(benchmark_spec):
       clone_command.append('--branch={}'.format(FLAGS.beam_version))
       clone_command.append('--single-branch')
     vm_util.IssueCommand(clone_command, cwd=vm_util.GetTempDir())
-    beam_dir = os.path.join(vm_util.GetTempDir(), 'beam')
-  else:
-    if not os.path.exists(FLAGS.beam_location):
-      raise errors.Config.InvalidValue(
-          'Directory indicated by beam_location does not exist: '
-          '{}.'.format(FLAGS.beam_location))
-    beam_dir = FLAGS.beam_location
+  elif not os.path.exists(FLAGS.beam_location):
+    raise errors.Config.InvalidValue(
+        'Directory indicated by beam_location does not exist: '
+        '{}.'.format(FLAGS.beam_location))
 
   if benchmark_spec.dpb_service.SERVICE_TYPE == dpb_service.DATAFLOW:
     mvn_command = [FLAGS.maven_binary]
     mvn_command.extend(INSTALL_COMMAND_ARGS)
     mvn_command.append('-Pdataflow-runner')
     logging.info("Running: %s", mvn_command)
-    # vm_util.IssueCommand(mvn_command, cwd=beam_dir)
+    # vm_util.IssueCommand(mvn_command, cwd=_GetBeamDir())
 
 
 def BuildBeamCommand(benchmark_spec, classname, job_arguments):
@@ -120,14 +117,17 @@ def BuildBeamCommand(benchmark_spec, classname, job_arguments):
   if benchmark_spec.service_type not in SUPPORTED_RUNNERS:
     raise NotImplementedError('Unsupported Runner')
 
+  base_dir = _GetBeamDir()
+
   if FLAGS.beam_sdk == BEAM_JAVA_SDK:
     cmd = _BuildMavenCommand(benchmark_spec, classname, job_arguments)
   elif FLAGS.beam_sdk == BEAM_PYTHON_SDK:
     cmd = _BuildPythonCommand(benchmark_spec, job_arguments)
+    base_dir = os.path.join(base_dir, 'sdks/python')
   else:
-    raise NotImplementedError('Unsupported Beam SDK')
+    raise NotImplementedError('Unsupported Beam SDK: %s.' % FLAGS.beam_sdk)
 
-  return cmd, _GetBeamDir()
+  return cmd, base_dir
 
 def _BuildMavenCommand(benchmark_spec, classname, job_arguments):
   """ Constructs a maven command for the benchmark.
@@ -184,13 +184,6 @@ def _BuildPythonCommand(benchmark_spec, job_arguments):
   Returns:
     cmd: Array containg the built command.
   """
-  # job_arguments = [
-  #                  '--project=google.com:clouddfe',
-  #                  '--job_name=py-wordcount-e2e-markliu ',
-  #                  '--staging_location=gs://mliu-test/tmp/python ',
-  #                  '--temp_location=gs://mliu-test/tmp/python',
-  #                  '--sdk_location=dist/apache-beam-2.1.0.dev0.tar.gz',
-  #                  '--output=gs://mliu-test/tmp/python/output']
 
   cmd = []
 
@@ -236,7 +229,7 @@ def _GetBeamDir():
 
 
 def _FindFiles(base_path, pattern):
-  if os.path.exists(base_path):
+  if not os.path.exists(base_path):
     raise RuntimeError('No such directory: %s' % base_path)
 
   results = []
