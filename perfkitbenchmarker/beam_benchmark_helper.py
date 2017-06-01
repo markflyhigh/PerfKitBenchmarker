@@ -26,6 +26,7 @@ from perfkitbenchmarker import dpb_service
 from perfkitbenchmarker import errors
 from perfkitbenchmarker import flags
 from perfkitbenchmarker import vm_util
+from perfkitbenchmarker.linux_benchmarks import beam_integration_benchmark
 
 
 # TODO: Find a better place for the maven_binary flag.
@@ -63,7 +64,6 @@ BEAM_PYTHON_SDK = 'python'
 BEAM_REPO_LOCATION = 'https://github.com/apache/beam.git'
 INSTALL_COMMAND_ARGS = ["clean", "install", "-DskipTests",
                         "-Dcheckstyle.skip=true"]
-DEFAULT_PYTHON_IT_MODULE = 'apache_beam.examples.wordcount_it_test'
 
 def InitializeBeamRepo(benchmark_spec):
   """Ensures environment is prepared for running Beam benchmarks.
@@ -99,7 +99,7 @@ def InitializeBeamRepo(benchmark_spec):
     mvn_command.extend(INSTALL_COMMAND_ARGS)
     mvn_command.append('-Pdataflow-runner')
     logging.info("Running: %s", mvn_command)
-    # vm_util.IssueCommand(mvn_command, cwd=_GetBeamDir())
+    vm_util.IssueCommand(mvn_command, cwd=_GetBeamDir())
 
 
 def BuildBeamCommand(benchmark_spec, classname, job_arguments):
@@ -202,7 +202,8 @@ def _BuildPythonCommand(benchmark_spec, job_arguments):
     cmd.append('--attr={}'.format(FLAGS.beam_attr))
   if not FLAGS.beam_it_module and not FLAGS.beam_attr:
     # Set default IT if no module and attribute is specified.
-    cmd.append('--tests={}'.format(DEFAULT_PYTHON_IT_MODULE))
+    cmd.append('--tests={}'.format(
+        beam_integration_benchmark.DEFAULT_PYTHON_IT_MODULE))
 
   beam_args = job_arguments if job_arguments else []
 

@@ -54,9 +54,12 @@ beam_integration_benchmark:
     worker_count: 2
 """
 
+DEFAULT_JAVA_IT_CLASS = 'org.apache.beam.examples.WordCountIT'
+DEFAULT_PYTHON_IT_MODULE = 'apache_beam.examples.wordcount_it_test'
+
 flags.DEFINE_string(
     'beam_it_class',
-    'org.apache.beam.examples.WordCountIT',
+    DEFAULT_JAVA_IT_CLASS,
     'Path to IT class')
 flags.DEFINE_string('beam_it_args', None, 'Args to provide to the IT')
 
