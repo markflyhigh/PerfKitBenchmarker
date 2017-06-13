@@ -80,8 +80,8 @@ def CheckPrerequisites(benchmark_spec):
         'provide --beam_it_args=--tempRoot=<temp dir, e.g. gs://my-dir/temp>.')
   if FLAGS.beam_sdk is None:
     raise errors.Config.InvalidValue(
-        'No sdk provided. To run Beam integration benchmark, must provide'
-        'which sdk is used in the pipeline. For example, java/python.'
+        'No sdk provided. To run Beam integration benchmark, the test must'
+        'specify which sdk is used in the pipeline. For example, java/python.'
     )
   if benchmark_spec.dpb_service.service_type != dpb_service.DATAFLOW:
     raise NotImplementedError('Currently only works against Dataflow.')
@@ -111,6 +111,8 @@ def Run(benchmark_spec):
       classname = DEFAULT_JAVA_IT_CLASS
     elif FLAGS.beam_sdk == beam_benchmark_helper.BEAM_PYTHON_SDK:
       classname = DEFAULT_PYTHON_IT_MODULE
+    else:
+      raise NotImplementedError('Unsupported Beam SDK: %s.' % FLAGS.beam_sdk)
   else:
     classname = FLAGS.beam_it_class
 
