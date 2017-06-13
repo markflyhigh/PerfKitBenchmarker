@@ -26,8 +26,9 @@ from perfkitbenchmarker import dpb_service
 from perfkitbenchmarker import errors
 from perfkitbenchmarker import flags
 from perfkitbenchmarker import vm_util
-from perfkitbenchmarker.linux_benchmarks import beam_integration_benchmark
 
+BEAM_JAVA_SDK = 'java'
+BEAM_PYTHON_SDK = 'python'
 
 # TODO: Find a better place for the maven_binary flag.
 flags.DEFINE_string('maven_binary', 'mvn',
@@ -46,20 +47,17 @@ flags.DEFINE_string('git_binary', 'git', 'Path to git binary.')
 flags.DEFINE_string('beam_version', None, 'Version of Beam to download. Use'
                                           ' tag from Github as value. If not'
                                           ' specified, will use HEAD.')
-flags.DEFINE_string('beam_sdk', None, 'Which BEAM SDK is used to build the'
-                                      'benchmark pipeline.')
-flags.DEFINE_string('beam_attr', None,
-                    'Attributes of integration test that are used in Python '
-                    'SDK.')
+flags.DEFINE_enum('beam_sdk', None, [BEAM_JAVA_SDK, BEAM_PYTHON_SDK],
+                  'Which BEAM SDK is used to build the benchmark pipeline.')
+flags.DEFINE_string('beam_python_attr', 'IT',
+                    'Test decorator that is used in Beam Python to filter a '
+                    'specific category.')
 
 FLAGS = flags.FLAGS
 
 SUPPORTED_RUNNERS = [
     dpb_service.DATAFLOW,
 ]
-
-BEAM_JAVA_SDK = 'java'
-BEAM_PYTHON_SDK = 'python'
 
 BEAM_REPO_LOCATION = 'https://github.com/apache/beam.git'
 INSTALL_COMMAND_ARGS = ["clean", "install", "-DskipTests",
@@ -122,7 +120,7 @@ def BuildBeamCommand(benchmark_spec, classname, job_arguments):
   if FLAGS.beam_sdk == BEAM_JAVA_SDK:
     cmd = _BuildMavenCommand(benchmark_spec, classname, job_arguments)
   elif FLAGS.beam_sdk == BEAM_PYTHON_SDK:
-    cmd = _BuildPythonCommand(benchmark_spec, job_arguments)
+    cmd = _BuildPythonCommand(benchmark_spec, classname, job_arguments)
     base_dir = os.path.join(base_dir, 'sdks/python')
   else:
     raise NotImplementedError('Unsupported Beam SDK: %s.' % FLAGS.beam_sdk)
@@ -174,11 +172,12 @@ def _BuildMavenCommand(benchmark_spec, classname, job_arguments):
   return cmd
 
 
-def _BuildPythonCommand(benchmark_spec, job_arguments):
+def _BuildPythonCommand(benchmark_spec, modulename, job_arguments):
   """ Constructs a Python command for the benchmark.
 
   Args:
     benchmark_spec: The PKB spec for the benchmark to run.
+    modulename: The name of the python module to run.
     job_arguments: The additional job arguments provided for the run.
 
   Returns:
@@ -195,15 +194,8 @@ def _BuildPythonCommand(benchmark_spec, job_arguments):
 
   cmd.append('setup.py')
   cmd.append('nosetests')
-
-  if FLAGS.beam_it_module:
-    cmd.append('--tests={}'.format(FLAGS.beam_it_module))
-  if FLAGS.beam_attr:
-    cmd.append('--attr={}'.format(FLAGS.beam_attr))
-  if not FLAGS.beam_it_module and not FLAGS.beam_attr:
-    # Set default IT if no module and attribute is specified.
-    cmd.append('--tests={}'.format(
-        beam_integration_benchmark.DEFAULT_PYTHON_IT_MODULE))
+  cmd.append('--tests={}'.format(modulename))
+  cmd.append('--attr={}'.format(FLAGS.beam_python_attr))
 
   beam_args = job_arguments if job_arguments else []
 

@@ -57,10 +57,7 @@ beam_integration_benchmark:
 DEFAULT_JAVA_IT_CLASS = 'org.apache.beam.examples.WordCountIT'
 DEFAULT_PYTHON_IT_MODULE = 'apache_beam.examples.wordcount_it_test'
 
-flags.DEFINE_string(
-    'beam_it_class',
-    DEFAULT_JAVA_IT_CLASS,
-    'Path to IT class')
+flags.DEFINE_string('beam_it_class', None, 'Path to IT class')
 flags.DEFINE_string('beam_it_args', None, 'Args to provide to the IT')
 
 FLAGS = flags.FLAGS
@@ -108,7 +105,14 @@ def Run(benchmark_spec):
 
   # Switch the parameters for submit job function of specific dpb service
   job_arguments = ['"{}"'.format(arg) for arg in FLAGS.beam_it_args.split(',')]
-  classname = FLAGS.beam_it_class
+
+  if FLAGS.beam_it_class is None:
+    if FLAGS.beam_sdk == beam_benchmark_helper.BEAM_JAVA_SDK:
+      classname = DEFAULT_JAVA_IT_CLASS
+    elif FLAGS.beam_sdk == beam_benchmark_helper.BEAM_PYTHON_SDK:
+      classname = DEFAULT_PYTHON_IT_MODULE
+  else:
+    classname = FLAGS.beam_it_class
 
   job_type = BaseDpbService.BEAM_JOB_TYPE
 
